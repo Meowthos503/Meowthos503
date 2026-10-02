@@ -1,11 +1,11 @@
 <details open>
-<summary>显示 / 隐藏动画</summary>
+<summary>Cube Snake · 显示 / 隐藏录制预览</summary>
 
+<a href="https://meowthos503.github.io/cube-snake/" title="打开 Cube Snake 3D 互动演示">
 <picture>
-  <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="assets/catworm-snake-dark-static.svg">
-  <source media="(prefers-reduced-motion: reduce)" srcset="assets/catworm-snake-light-static.svg">
-  <source media="(prefers-color-scheme: dark)" srcset="assets/catworm-snake-dark.svg">
-  <img alt="像素猫猫虫在棋盘里追鱼、变长，撞到自己后重新开始的自动游戏演示" src="assets/catworm-snake-light.svg" width="840">
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/cube-snake-preview-static.svg">
+  <img alt="Cube Snake 的 16³ 正交投影录制预览，点击画面打开 3D 互动演示" src="assets/cube-snake-preview.svg" width="1000">
 </picture>
+</a>
 
 </details>
