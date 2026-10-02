@@ -1721,5 +1721,5 @@
 </g>
 <rect x="816" y="422" width="154" height="34" rx="17" fill="#152A35" stroke="#35525F"/>
 <path d="M832 432L832 446L843 439Z" fill="#E3EFF4"/>
-<text x="852" y="443" fill="#DCE8ED" font-family="system-ui,sans-serif" font-size="12">Open the demo ↗</text>
+<text x="852" y="443" fill="#DCE8ED" font-family="system-ui,sans-serif" font-size="12">Open the demo</text><path d="M945 445L954 436M948 436H954V442" fill="none" stroke="#DCE8ED" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
