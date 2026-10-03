@@ -1,174 +1,293 @@
+"""Reproduce the approved D2 cat, cell for cell, with quiet native pixel motion.
+
+Python 3 + Pillow are build-time tools only. SVGs have no runtime dependencies.
+"""
 from pathlib import Path
+from collections import deque
+import hashlib
 import json
-from PIL import Image,ImageDraw
-R=Path(__file__).resolve().parents[1]
-W,H=80,66
-C=dict(out='#131822',fur='#242633',body='#2C2E3E',shade='#1C202B',hi='#3C3C50',soft='#4F4B63',pink='#DCA0B3',ear='#8E789F',gold='#E9C579',blue='#8DBED1',glint='#FFF4D4',toy='#B39BCD',toyHi='#E5D8EB')
-def layer():return Image.new('RGBA',(W,H),(0,0,0,0))
-def draw_mask(shape,color='fur',outline=True):
- m=Image.new('1',(W,H));d=ImageDraw.Draw(m);shape(d)
- im=layer();p=im.load();mp=m.load()
- for y in range(H):
-  for x in range(W):
-   if mp[x,y]:p[x,y]=(*tuple(bytes.fromhex(C[color][1:])),255)
-   elif outline and any(0<=x+dx<W and 0<=y+dy<H and mp[x+dx,y+dy] for dx,dy in ((1,0),(-1,0),(0,1),(0,-1))):p[x,y]=(*tuple(bytes.fromhex(C['out'][1:])),255)
- return im
+import xml.etree.ElementTree as ET
+from PIL import Image, ImageDraw, ImageFont
 
-def ellipse_mask(box,col='fur'):
- return draw_mask(lambda d:d.ellipse(box,fill=1),col)
-def rect(d,box,col):d.rectangle(box,fill=C[col])
-def face(center=(40,27), expression='open',look=0,ear=0,squash=0):
- cx,cy=center
- flat=max(squash,3 if expression in ('closed','wink') else 0)
- # Two small ears grow out of a broad cheek-heavy head. This art is original.
- im=draw_mask(lambda d:(d.polygon([(cx-17,cy-8+flat),(cx-17-ear,cy-20+flat),(cx-8,cy-16+flat),(cx+8,cy-16+flat),(cx+17+ear,cy-20+flat),(cx+17,cy-8+flat)],fill=1),d.ellipse((cx-21,cy-15+flat,cx+21,cy+14-flat),fill=1)))
- d=ImageDraw.Draw(im)
- d.polygon([(cx-15,cy-10+flat),(cx-15-ear,cy-16+flat),(cx-9,cy-13+flat)],fill=C['ear'])
- d.polygon([(cx+9,cy-13+flat),(cx+15+ear,cy-16+flat),(cx+15,cy-10+flat)],fill=C['ear'])
- # Soft forehead/fur highlights are broad, never a robotic frame.
- rect(d,(cx-11,cy-11,cx-7,cy-10),'hi');rect(d,(cx-5,cy-12,cx-2,cy-11),'hi');rect(d,(cx-20,cy-3,cx-20,cy+1),'soft')
- for ex,col in ((cx-10,'gold'),(cx+10,'blue')):
-  this_expression='open' if expression=='wink' and col=='gold' else 'closed' if expression=='wink' else expression
-  if this_expression=='closed':
-   d.line([(ex-4,cy+1),(ex-3,cy+3),(ex+2,cy+3),(ex+4,cy+1)],fill=C['soft'],width=1)
-  elif this_expression=='blink':d.line([(ex-4,cy+3),(ex+4,cy+3)],fill=C['gold'] if col=='gold' else C['blue'],width=1)
-  else:
-   d.ellipse((ex-4,cy-2,ex+4,cy+5),fill=C[col]);d.rectangle((ex+look-1,cy-2,ex+look,cy+5),fill=C['shade']);rect(d,(ex+2,cy-1,ex+3,cy),'glint')
-   if this_expression=='half':rect(d,(ex-4,cy-2,ex+4,cy+1),'fur')
- rect(d,(cx-1,cy+7,cx+1,cy+7),'pink');rect(d,(cx,cy+8,cx,cy+9),'soft');rect(d,(cx-3,cy+10,cx-1,cy+10),'soft');rect(d,(cx+1,cy+10,cx+3,cy+10),'soft')
- rect(d,(cx-17,cy+7,cx-14,cy+7),'hi');rect(d,(cx+14,cy+7,cx+17,cy+7),'hi')
- return im
-
-def pose(kind='loaf',expr='open',look=0,ear=0,paw=0,stretch=0,bob=0,tail=0):
- im=layer()
- if kind=='sleep':
-  # Hips curl around the resting head; the tail follows the mound.
-  im.alpha_composite(ellipse_mask((17,30-bob,67,58),'body'))
-  t=draw_mask(lambda d:d.line([(62,47),(68,43),(69,50),(65,58),(45,60),(33,58)],fill=1,width=5),'fur');im.alpha_composite(t)
-  im.alpha_composite(face((32,46),'closed',0,-1));d=ImageDraw.Draw(im)
-  rect(d,(22,58,29,61),'fur');rect(d,(22,61,29,61),'hi');rect(d,(52,33-bob,57,34-bob),'hi')
- elif kind=='stretch':
-  # Hips remain high, chest descends, front paws slide forward along the floor.
-  im.alpha_composite(draw_mask(lambda d:d.line([(64,43),(69,34),(69,20),(66,15)],fill=1,width=5),'body'))
-  im.alpha_composite(draw_mask(lambda d:(d.ellipse((37,29,66,55),fill=1),d.polygon([(43,41),(35,49),(23-stretch,56),(19-stretch,61),(39,61),(49,49)],fill=1)),'body'))
-  im.alpha_composite(ellipse_mask((17-stretch,56,33-stretch,62),'fur'))
-  im.alpha_composite(ellipse_mask((40-stretch,56,53-stretch,62),'fur'))
-  im.alpha_composite(face((30-stretch//2,43+bob),expr,look,ear));d=ImageDraw.Draw(im);rect(d,(20-stretch,62,24-stretch,62),'hi');rect(d,(43-stretch,62,47-stretch,62),'hi')
- else:
-  # Tail curls behind the loaf, and head overlaps a low torso throughout.
-  im.alpha_composite(draw_mask(lambda d:(d.line([(61,50),(69,48),(72,42-tail),(71,37-tail),(67,35-tail),(64,37-tail)],fill=1,width=5),d.ellipse((62,35-tail,66,39-tail),fill=1)),'body'))
-  im.alpha_composite(ellipse_mask((17,37,64,59),'body'))
-  if paw:
-   im.alpha_composite(draw_mask(lambda d:d.polygon([(29,50),(32,56),(29-paw,60),(21-paw,58)],fill=1),'body'))
-  im.alpha_composite(draw_mask(lambda d:d.ellipse((21-paw,56,33-paw,61),fill=1),'body',False));im.alpha_composite(draw_mask(lambda d:d.ellipse((45,56,57,61),fill=1),'body',False))
-  im.alpha_composite(face((40,29+bob),expr,look,ear));d=ImageDraw.Draw(im)
-  rect(d,(24-paw,61,29-paw,61),'hi');rect(d,(48,61,53,61),'hi');rect(d,(56,43,59,44),'hi');rect(d,(18,44,18,48),'soft');rect(d,(72,40-tail,72,43-tail),'soft')
- return im
-
-def lerp(a,b,f):return round(a+(b-a)*f)
-def morph(kind,f,expr='closed'):
- im=layer()
- if kind=='stretch':
-  tail0=[(61,50),(69,48),(73,42),(72,37),(67,35),(64,37)]
-  tail1=[(61,48),(67,40),(69,30),(69,20),(66,15),(66,15)]
-  pts=[(lerp(a,c,f),lerp(b,d,f)) for (a,b),(c,d) in zip(tail0,tail1)]
-  im.alpha_composite(draw_mask(lambda d:d.line(pts,fill=1,width=5),'body'))
-  box=tuple(lerp(a,b,f) for a,b in zip((17,37,64,59),(37,29,66,55)))
-  im.alpha_composite(ellipse_mask(box,'body'))
-  fore0=[(30,43),(44,43),(35,58),(22,58)];fore1=[(49,41),(49,49),(22,61),(13,61)]
-  fg=[(lerp(a,c,f),lerp(b,d,f)) for (a,b),(c,d) in zip(fore0,fore1)]
-  im.alpha_composite(draw_mask(lambda d:d.polygon(fg,fill=1),'body'))
-  for a,b in [((21,56,33,61),(13,57,29,62)),((45,56,57,61),(36,57,49,62))]:
-   im.alpha_composite(ellipse_mask(tuple(lerp(x,y,f) for x,y in zip(a,b))))
-  im.alpha_composite(face((lerp(40,28,f),lerp(29,43,f)),expr))
- elif kind=='curl':
-  im.alpha_composite(ellipse_mask(tuple(lerp(a,b,f) for a,b in zip((17,37,64,59),(17,30,67,58))),'body'))
-  tail0=[(61,50),(69,48),(73,42),(72,37),(67,35),(64,37)]
-  tail1=[(62,47),(68,43),(69,50),(65,58),(45,60),(33,58)]
-  pts=[(lerp(a,c,f),lerp(b,d,f)) for (a,b),(c,d) in zip(tail0,tail1)]
-  im.alpha_composite(draw_mask(lambda d:d.line(pts,fill=1,width=5),'fur'))
-  im.alpha_composite(ellipse_mask(tuple(lerp(a,b,f) for a,b in zip((21,56,33,61),(22,58,30,61)))))
-  im.alpha_composite(ellipse_mask(tuple(lerp(a,b,f) for a,b in zip((45,56,57,61),(45,54,57,59)))))
-  im.alpha_composite(face((lerp(40,32,f),lerp(29,46,f)),expr,0,-1))
- return im
-
-def shapes(im):
- # Every filled path is composed of horizontal pixel runs, with no bitmap links.
- colors={};p=im.load()
- for y in range(H):
-  x=0
-  while x<W:
-   c=p[x,y]
-   if c[3]==0:x+=1;continue
-   x2=x+1
-   while x2<W and p[x2,y]==c:x2+=1
-   colors.setdefault('#%02X%02X%02X'%c[:3],[]).append(f'M{x} {y}h{x2-x}v1h-{x2-x}Z');x=x2
- return ''.join(f'<path fill="{c}" d="{"".join(ds)}"/>' for c,ds in colors.items())
-
-# Named poses are reused across a slow, comprehensible state machine.
-POSES={
-'loaf':pose(), 'blink':pose(expr='blink'), 'half':pose(expr='half'),
-'listen':pose(look=-1,ear=1,tail=1), 'watch':pose(look=-2,ear=1),
-'reach2':pose(look=-2,paw=2), 'reach5':pose(look=-2,paw=5), 'reach8':pose(look=-2,paw=8), 'reach11':pose(look=-2,paw=11),
-'sleep':pose('sleep'), 'breathe':pose('sleep',bob=1), 'wink':morph('curl',1,'wink'),
-'wakehalf':pose(expr='half',bob=1), 'wake':pose(bob=1,ear=1)
+ROOT = Path(__file__).resolve().parents[1]
+SIZE = 32
+PALETTE = {
+    ".": (0, 0, 0, 0),
+    "o": (21, 18, 31, 255),
+    "s": (37, 32, 51, 255),
+    "b": (56, 48, 68, 255),
+    "m": (74, 62, 88, 255),
+    "h": (102, 87, 116, 255),
+    "p": (193, 125, 148, 255),
+    "e": (121, 82, 108, 255),
+    "g": (237, 189, 88, 255),
+    "u": (102, 159, 198, 255),
 }
-for i in range(1,7):
- POSES['stretch'+str(i)]=morph('stretch',i/6)
- POSES['curl'+str(i)]=morph('curl',i/6)
-# Morph at 7–10 pixel poses per second during transitions, hold for the actions.
-TIMELINE=[(0,'loaf'),(2.4,'blink'),(2.55,'loaf'),(4.2,'listen'),(5.4,'watch'),(6.0,'reach2'),(6.15,'reach5'),(6.3,'reach8'),(6.45,'reach11'),(6.8,'reach8'),(6.95,'reach5'),(7.1,'reach2'),(7.25,'watch'),(8.4,'loaf'),(10.3,'half')]
-TIMELINE += [(11+i*.13,'stretch'+str(i)) for i in range(1,7)]
-TIMELINE += [(12.9+(6-i)*.13,'stretch'+str(i)) for i in range(6,0,-1)]
-TIMELINE += [(13.68,'half')]
-TIMELINE += [(14+i*.14,'curl'+str(i)) for i in range(1,7)]
-TIMELINE += [(15.0,'sleep'),(16.0,'breathe'),(17.2,'sleep'),(18.6,'breathe'),(19.8,'sleep'),(21.2,'breathe'),(22.4,'sleep'),(23.5,'wink')]
-TIMELINE += [(24+(6-i)*.14,'curl'+str(i)) for i in range(6,0,-1)]
-TIMELINE += [(24.9,'wakehalf'),(25.4,'wake'),(26.0,'loaf'),(27.1,'blink'),(27.25,'loaf'),(30.0,'loaf')]
-TIMELINE.sort()
-# The light block rocks on its weighted base and settles; no unexplained return.
-TOY=[(0,0,0,0),(6.44,0,0,0),(6.45,0,0,-12),(6.6,0,0,-24),(6.75,0,0,-8),(6.9,0,0,8),(7.05,0,0,-4),(7.2,0,0,2),(7.4,0,0,0),(30.0,0,0,0)]
+# Exact approved D2-soft-cheek-loaf-32x32.png, without resampling or redrawing.
+REST = (
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "....o.......o...................",
+    "...obo.....obo..................",
+    "...oebooooobeo..................",
+    "...obbmmmmmbbo..................",
+    "...obhhhhmmmmbo..ooooooo........",
+    "...ommbbbbbbbbboomhhhhmmooo.....",
+    "..obbbbbbbbbbbbbbbbbbbbbmmo.....",
+    "..obbooobbooobbbbbbbbbbbbbbo.o..",
+    "..obbggbbbuubbbbbbbbbbbbbbbbobo.",
+    "..obbbbbbbbbbbbbbbbbbbbbbbbbbmo.",
+    "...ommbbpbbbmmbbbbbbbbbboooobbo.",
+    "...ossssosssssssssssssooosmmbo..",
+    "....ossososbooooooobmmmmmmmoo...",
+    "....oooooooo.......oooooooo.....",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+)
+
+
+def image(rows):
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    out = Image.new("RGBA", (SIZE, SIZE))
+    out.putdata([PALETTE[p] for row in rows for p in row])
+    return out
+
+
+def pixels(im):
+    return [im.getpixel((x, y)) for y in range(SIZE) for x in range(SIZE)]
+
+
+def frame(close=False, breathe=False, tail=False):
+    rows = [list(row) for row in REST]
+    if close:
+        # A shallow three-cell curve replaces each iris/lid cluster. The
+        # approved open-eye sprite is unchanged; closed eyes aren't dark holes.
+        for x in (5, 6, 10, 11):
+            rows[20][x] = "b"
+        for x in (6, 11):
+            rows[19][x] = "b"
+            rows[20][x] = "o"
+    if breathe:
+        # Only the upper back lifts by one native cell. Head, shoulder contact,
+        # tucked paws, belly and wrapped lower tail are fixed.
+        for x in range(16, 26):
+            for y in range(14, 18):
+                rows[y][x] = REST[y + 1][x]
+    if tail:
+        # A single outline tip shifts one cell right, still attached to the tail.
+        rows[19][29] = "."
+        rows[19][30] = "o"
+    return image(rows)
+
+
+FRAMES = {
+    "rest": frame(),
+    "breathe": frame(breathe=True),
+    "closed": frame(close=True),
+    "closed-breathe": frame(close=True, breathe=True),
+    "tail": frame(tail=True),
+}
+DURATION = 24.0
+# Mostly still holds. The first and last state are exactly the approved rest.
+TIMELINE = [
+    (0.0, "rest"),
+    (3.2, "breathe"), (4.6, "rest"),
+    (6.8, "closed"), (6.98, "rest"),
+    (10.8, "tail"), (11.15, "rest"),
+    (14.0, "closed"),
+    (16.0, "closed-breathe"), (17.2, "closed"),
+    (18.6, "rest"),
+    (21.6, "breathe"), (22.8, "rest"),
+    (DURATION, "rest"),
+]
+THEMES = {"light": "#eee9ef", "dark": "#51435d"}
+
 
 def state(t):
- at=TIMELINE[0][1]
- for s,v in TIMELINE:
-  if t>=s:at=v
- return at
-def toy(t):
- at=TOY[0][1:]
- for s,*v in TOY:
-  if t>=s:at=v
- return at
+    selected = "rest"
+    for start, name in TIMELINE:
+        if start <= t:
+            selected = name
+    return selected
+
+
+def shapes(im):
+    """Encode each native horizontal color run as integer-coordinate cells."""
+    colors = {}
+    for y in range(SIZE):
+        x = 0
+        while x < SIZE:
+            color = im.getpixel((x, y))
+            if not color[3]:
+                x += 1
+                continue
+            end = x + 1
+            while end < SIZE and im.getpixel((end, y)) == color:
+                end += 1
+            key = "#%02x%02x%02x" % color[:3]
+            colors.setdefault(key, []).append(f"M{x} {y}h{end-x}v1h-{end-x}Z")
+            x = end
+    return "".join(f'<path fill="{color}" d="{"".join(runs)}"/>'
+                   for color, runs in colors.items())
+
 
 def css():
- lines=[]
- for name in POSES:
-  pts=[];prev=None
-  for t,v in TIMELINE:
-   val=int(v==name)
-   if val!=prev or t==30:pts.append(f'{t/30*100:.8f}%{{opacity:{val}}}');prev=val
-  lines.append('@keyframes pose-'+name+'{'+''.join(pts)+'}'+'.pose-'+name+'{animation:pose-'+name+' 30s steps(1,end) infinite}')
- lines.append('@keyframes toy{'+''.join(f'{t/30*100:.8f}%{{transform:translate({x}px,{y}px) rotate({r}deg)}}' for t,x,y,r in TOY)+'}.toy{transform-origin:12px 59px;animation:toy 30s steps(1,end) infinite}')
- lines.append('@media(prefers-reduced-motion:reduce){.cat-pose,.toy{animation:none!important}.cat-pose{opacity:0!important}.pose-loaf{opacity:1!important}}')
- return '\n'.join(lines)
+    rules = []
+    for name in FRAMES:
+        keys = []
+        previous = None
+        for t, selected in TIMELINE:
+            visible = int(selected == name)
+            if visible != previous or t == DURATION:
+                keys.append(f"{100*t/DURATION:.8f}%{{opacity:{visible}}}")
+                previous = visible
+        rules.append(f"@keyframes frame-{name}{{{''.join(keys)}}}"
+                     f".frame-{name}{{animation:frame-{name} {DURATION:g}s steps(1,end) infinite}}")
+    rules.append("@media(prefers-reduced-motion:reduce){"
+                 ".cat-frame{animation:none!important;opacity:0!important}"
+                 ".frame-rest{opacity:1!important}}")
+    return "\n".join(rules)
 
-PAL={'light':dict(bg='#F3EEDD',edge='#D4C9CF',cushion='#D8D0E1',base='#A7A0B9'), 'dark':dict(bg='#51435D',edge='#695971',cushion='#695D7A',base='#8A759B')}
-def svg(theme='light',motion=True,t=None):
- p=PAL[theme];out=['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 510" width="900" height="510" role="img" aria-labelledby="cat-title cat-desc">', '<title id="cat-title">Meowthos · 小猫歇一会儿</title>','<desc id="cat-desc">Original charcoal pixel kitten with a broad round head, gold and blue eyes and short paws. It rests, blinks, listens, gently bats a little block, stretches, curls up to sleep and wakes in a thirty-second loop. Use the surrounding native fold control to hide the animation; a still companion is offered for reduced motion. This image is not interactive.</desc>']
- if motion and t is None:out+=['<style>',css(),'</style>']
- out+=['<g shape-rendering="crispEdges">',f'<path fill="{p["bg"]}" d="M0 0H900V510H0Z"/>',f'<path fill="{p["edge"]}" d="M230 451H690V455H230Z"/>',f'<path fill="{p["base"]}" d="M278 420H635V447H278Z"/>',f'<path fill="{p["cushion"]}" d="M266 418H645V435H266Z M282 410H628V441H282Z"/>','<g transform="translate(175 16) scale(7)">']
- tx,ty,tr=toy(0 if t is None else t)
- out+=[f'<g class="toy" transform="translate({tx} {ty}) rotate({tr} 12 59)">',f'<path fill="{C["toy"]}" d="M9 53H15V59H9Z"/>',f'<path fill="{C["toyHi"]}" d="M9 53H15V54H9Z M9 54H10V57H9Z"/>','</g>']
- selected=state(0 if t is None else t)
- for name,im in POSES.items():
-  if t is not None or not motion:
-   if name!=selected:continue
-   out.append(shapes(im))
-  else:out.append(f'<g class="cat-pose pose-{name}" opacity="{int(name=="loaf")}">{shapes(im)}</g>')
- out+=['</g>','</g>','</svg>'];return '\n'.join(out)+'\n'
-if __name__=='__main__':
- for theme in PAL:
-  for motion in (True,False):
-   name='cat-'+theme+('' if motion else '-static')+'.svg'
-   (R/'assets'/name).write_text(svg(theme,motion),encoding='utf-8')
- print('Built four original pixel-cat SVG companions')
+
+def svg(theme="light", motion=True, t=None):
+    out = [
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="900" height="300" role="img" aria-labelledby="cat-title cat-desc">',
+        '<title id="cat-title">Meowthos · 困困小猫</title>',
+        '<desc id="cat-desc">Original 32-by-32 charcoal pixel cat: a low, long loaf with short ears, tucked paws, a wrapped tail, a gold left eye and blue right eye. It rests, blinks, breathes gently and dozes in a quiet 24-second loop. The surrounding fold control hides the image; reduced motion shows the exact resting sprite.</desc>',
+    ]
+    if motion and t is None:
+        out += ['<style>', css(), '</style>']
+    out += ['<g shape-rendering="crispEdges">',
+            f'<path fill="{THEMES[theme]}" d="M0 0H900V300H0Z"/>',
+            '<g transform="translate(258 -45) scale(12)">']
+    selected = state(0 if t is None else t)
+    for name, im in FRAMES.items():
+        if t is not None or not motion:
+            if name == selected:
+                out.append(shapes(im))
+        else:
+            out.append(f'<g class="cat-frame frame-{name}" opacity="{int(name == "rest")}">{shapes(im)}</g>')
+    out += ['</g>', '</g>', '</svg>']
+    return "\n".join(out) + "\n"
+
+
+def scene(theme, name="rest"):
+    out = Image.new("RGB", (900, 300), THEMES[theme])
+    sprite = FRAMES[name].resize((384, 384), Image.Resampling.NEAREST)
+    out.paste(sprite, (258, -45), sprite)
+    return out
+
+
+def connected(im):
+    cells = {(x, y) for y in range(SIZE) for x in range(SIZE)
+             if im.getpixel((x, y))[3]}
+    unseen = set(cells)
+    todo = deque([unseen.pop()])
+    while todo:
+        x, y = todo.popleft()
+        for neighbor in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
+            if neighbor in unseen:
+                unseen.remove(neighbor)
+                todo.append(neighbor)
+    return not unseen
+
+
+def validate():
+    rest = image(REST)
+    assert hashlib.sha256(rest.tobytes()).hexdigest() == '6af24de15d050a4e91b99aa89b2fe601ca7c72e64659259b99bdc8fef5857c46'
+    details = {}
+    palette = set(PALETTE.values())
+    for name, im in FRAMES.items():
+        assert im.size == (32, 32)
+        assert set(pixels(im)) <= palette
+        assert {c[3] for c in pixels(im)} == {0, 255}
+        assert connected(im), name
+        changed = [(x, y) for y in range(SIZE) for x in range(SIZE)
+                   if im.getpixel((x, y)) != rest.getpixel((x, y))]
+        if name not in ("closed", "closed-breathe"):
+            assert im.crop((0, 0, 15, 32)).tobytes() == rest.crop((0, 0, 15, 32)).tobytes()
+        else:
+            assert all((x >= 16 and y < 18) or (y == 20 and x in (5, 6, 10, 11)) or (y == 19 and x in (6, 11))
+                       for x, y in changed)
+        assert im.crop((0, 22, 32, 32)).tobytes() == rest.crop((0, 22, 32, 32)).tobytes()
+        nearest = im.resize((384, 384), Image.Resampling.NEAREST)
+        assert nearest.resize((32, 32), Image.Resampling.NEAREST).tobytes() == im.tobytes()
+        details[name] = {"native_size": [32, 32], "changed_cells": len(changed),
+                         "opaque_colors": len({c for c in pixels(im) if c[3]}),
+                         "alpha_values": [0, 255], "four_connected": True,
+                         "tucked_paws_and_floor_unchanged": True,
+                         "rgba_sha256": hashlib.sha256(im.tobytes()).hexdigest()}
+    assert FRAMES[state(0)].tobytes() == FRAMES[state(DURATION)].tobytes() == rest.tobytes()
+    assert all(TIMELINE[i][0] < TIMELINE[i+1][0] for i in range(len(TIMELINE)-1))
+    for theme in THEMES:
+        for motion in (True, False):
+            doc = svg(theme, motion)
+            root = ET.fromstring(doc)
+            for el in root.iter():
+                assert el.tag.split('}')[-1] not in ("script", "image", "foreignObject", "use", "linearGradient", "radialGradient", "filter")
+                assert not any(k.startswith("on") or k.endswith("href") for k in el.attrib)
+            assert 'scale(12)' in doc and 'shape-rendering="crispEdges"' in doc
+            if not motion:
+                assert "<style>" not in doc and "cat-frame" not in doc
+    return {"duration_seconds": DURATION, "timeline": TIMELINE,
+            "first_and_last_exact_rest": True,
+            "rest_opaque_palette": ["#%02x%02x%02x" % c[:3] for c in PALETTE.values() if c[3]],
+            "frames": details}
+
+
+def review_artifacts(proof):
+    qa = ROOT / "qa"
+    qa.mkdir(exist_ok=True)
+    try:
+        fontpath = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
+        font = ImageFont.truetype(fontpath, 18)
+        small = ImageFont.truetype(fontpath, 13)
+    except OSError:
+        font = ImageFont.load_default(size=18)
+        small = ImageFont.load_default(size=13)
+    contact = Image.new("RGB", (1260, 414), "#eee9ef")
+    draw = ImageDraw.Draw(contact)
+    draw.text((22, 12), "D2 · 原生 32×32 · 同一只猫的五个微小状态", font=font, fill="#292432")
+    labels = {"rest": "批准原帧 · 完全一致", "breathe": "背部一像素呼吸", "closed": "闭眼 · 三格浅浅眼睑", "closed-breathe": "闭眼时轻轻呼吸", "tail": "尾尖偶尔移一像素"}
+    for i, (name, im) in enumerate(FRAMES.items()):
+        x = 20 + i * 248
+        sprite = im.resize((224, 224), Image.Resampling.NEAREST)
+        contact.paste(sprite, (x, 58), sprite)
+        draw.text((x, 298), labels[name], font=small, fill="#292432")
+        draw.text((x, 323), f"与原帧差 {proof['frames'][name]['changed_cells']} 格", font=small, fill="#766b80")
+        im.save(qa / (name + '-32x32.png'))
+    draw.text((22, 369), "24 秒慢循环：歇着 → 眨眼 → 尾尖轻动 → 打盹 → 睁眼 · 每个像素格都是整数坐标", font=small, fill="#766b80")
+    contact.save(qa / 'Meowthos-D2-animation-contact-sheet.png')
+    scenes = [scene('light', name) for _, name in TIMELINE[:-1]]
+    durations = [round(1000*(TIMELINE[i+1][0]-TIMELINE[i][0])) for i in range(len(TIMELINE)-1)]
+    scenes[0].save(qa / 'Meowthos-D2-quiet-loop.gif', save_all=True,
+                   append_images=scenes[1:], duration=durations, loop=0,
+                   optimize=False, disposal=1)
+    for theme in THEMES:
+        scene(theme).save(qa / f'hero-{theme}-exact-rest.png')
+    (qa / 'pixel-proof.json').write_text(json.dumps(proof, indent=2, ensure_ascii=False) + '\n')
+
+
+if __name__ == '__main__':
+    (ROOT / 'assets').mkdir(exist_ok=True)
+    proof = validate()
+    for theme in THEMES:
+        for motion in (True, False):
+            name = 'cat-' + theme + ('' if motion else '-static') + '.svg'
+            (ROOT / 'assets' / name).write_text(svg(theme, motion), encoding='utf-8')
+    review_artifacts(proof)
+    print(json.dumps(proof, indent=2, ensure_ascii=False))
